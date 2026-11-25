@@ -131,7 +131,9 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
                 name=jugador_sel,
                 marker_color=["#2563eb", "#f97316"],
                 text=[f"{fila['OER_ON']:.2f}", f"{fila['DER_ON']:.2f}"],
-                textposition="auto",
+                textposition="inside",
+                insidetextanchor="start",
+                textfont=dict(color="white", size=12),
             )
         )
         fig_on.add_trace(
@@ -140,16 +142,23 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
                 y=[med_oer_on, med_der_on],
                 name="Mediana plantilla",
                 mode="markers+text",
-                marker=dict(color="#0f172a", size=14, symbol="diamond"),
-                text=[f"Med: {med_oer_on:.2f}", f"Med: {med_der_on:.2f}"],
+                marker=dict(
+                    color="#facc15",
+                    size=14,
+                    symbol="diamond",
+                    line=dict(color="#0f172a", width=2),
+                ),
+                text=[f"Mediana: {med_oer_on:.2f}", f"Mediana: {med_der_on:.2f}"],
                 textposition="top center",
+                textfont=dict(color="#0f172a", size=11),
             )
         )
+        max_val = max(fila["OER_ON"], fila["DER_ON"], med_oer_on, med_der_on)
         fig_on.update_layout(
             height=340,
-            margin=dict(l=20, r=20, t=30, b=20),
+            margin=dict(l=20, r=20, t=35, b=20),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            yaxis=dict(title="Puntos por posesión"),
+            yaxis=dict(title="Puntos por posesión", range=[0, max_val * 1.25]),
         )
         st.plotly_chart(fig_on, use_container_width=True)
 
