@@ -27,6 +27,114 @@ def _inject_print_css():
     )
 
 
+def _zscore(serie):
+    """Calcula la puntuación Z de una serie numérica evitando divisiones por cero."""
+    s = pd.to_numeric(serie, errors="coerce")
+    std = s.std(ddof=0)
+    if pd.isna(std) or std == 0:
+        return pd.Series(0.0, index=s.index)
+    return (s - s.mean()) / std
+
+
+def calcular_indices_totales(acum_f):
+    """Calcula IND_DEF e IND_ATK normalizados (Z) sobre los jugadores con SEXTOS > 0."""
+    if acum_f.empty or "SEXTOS" not in acum_f.columns:
+        return pd.DataFrame()
+
+    df = acum_f.copy()
+    df["SEXTOS"] = pd.to_numeric(df["SEXTOS"], errors="coerce").fillna(0)
+    df = df[df["SEXTOS"] > 0].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    rd_sex = pd.to_numeric(df["RD"], errors="coerce").fillna(0) / df["SEXTOS"] if "RD" in df.columns else pd.Series(0.0, index=df.index)
+    rec_sex = pd.to_numeric(df["REC"], errors="coerce").fillna(0) / df["SEXTOS"] if "REC" in df.columns else pd.Series(0.0, index=df.index)
+    as_sex = pd.to_numeric(df["AS"], errors="coerce").fillna(0) / df["SEXTOS"] if "AS" in df.columns else pd.Series(0.0, index=df.index)
+    ro_sex = pd.to_numeric(df["RO"], errors="coerce").fillna(0) / df["SEXTOS"] if "RO" in df.columns else pd.Series(0.0, index=df.index)
+    per_sex = pd.to_numeric(df["PER"], errors="coerce").fillna(0) / df["SEXTOS"] if "PER" in df.columns else pd.Series(0.0, index=df.index)
+
+    der_on = pd.to_numeric(df["DER_ON"], errors="coerce").fillna(0) if "DER_ON" in df.columns else pd.Series(0.0, index=df.index)
+    stops = pd.to_numeric(df["%STOPS"], errors="coerce").fillna(0) if "%STOPS" in df.columns else pd.Series(0.0, index=df.index)
+    oer_on = pd.to_numeric(df["OER_ON"], errors="coerce").fillna(0) if "OER_ON" in df.columns else pd.Series(0.0, index=df.index)
+    ts_pct = pd.to_numeric(df["TS%"], errors="coerce").fillna(0) if "TS%" in df.columns else pd.Series(0.0, index=df.index)
+
+    df["IND_DEF"] = (
+        0.40 * (-_zscore(der_on))
+        + 0.30 * _zscore(stops)
+        + 0.15 * _zscore(rd_sex)
+        + 0.15 * _zscore(rec_sex)
+    )
+    df["IND_ATK"] = (
+        0.35 * _zscore(oer_on)
+        + 0.25 * _zscore(ts_pct)
+        + 0.20 * _zscore(as_sex)
+        + 0.10 * _zscore(ro_sex)
+        - 0.10 * _zscore(per_sex)
+    )
+    return df
+
+
+def mostrar_graficas_jugador_total(acum_f, jugador_sel=None):
+    """Muestra las gráficas de Jugador Total en Defensa (IND_DEF) y en Ataque (IND_ATK)."""
+    df = calcular_indices_totales(acum_f)
+    if df.empty:
+        st.info("No hay datos suficientes de sextos para calcular los índices de jugador total.")
+        return
+
+    st.subheader("Jugador Total en Defensa vs Ataque (índice normalizado del grupo)")
+    col_d, col_a = st.columns(2)
+
+    with col_d:
+        st.caption("🛡️ Jugador Total en Defensa (`IND_DEF`: 40% -DER_ON, 30% %STOPS, 15% RD/Sex, 15% REC/Sex)")
+        d_ord = df.sort_values("IND_DEF", ascending=True)
+        colores_def = [
+            "#0f172a" if j == jugador_sel else ("#16a34a" if v >= 0 else "#dc2626")
+            for j, v in zip(d_ord["JUGADOR"], d_ord["IND_DEF"])
+        ]
+        fig_def = go.Figure(
+            go.Bar(
+                y=d_ord["JUGADOR"],
+                x=d_ord["IND_DEF"],
+                orientation="h",
+                marker_color=colores_def,
+                text=d_ord["IND_DEF"].map(lambda v: f"{v:+.2f}"),
+                textposition="outside",
+            )
+        )
+        fig_def.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_def.update_layout(
+            height=350,
+            margin=dict(l=10, r=40, t=20, b=20),
+            xaxis_title="Puntuación Z defensiva",
+        )
+        st.plotly_chart(fig_def, use_container_width=True)
+
+    with col_a:
+        st.caption("⚔️ Jugador Total en Ataque (`IND_ATK`: 35% OER_ON, 25% TS%, 20% AS/Sex, 10% RO/Sex, -10% PER/Sex)")
+        a_ord = df.sort_values("IND_ATK", ascending=True)
+        colores_atk = [
+            "#0f172a" if j == jugador_sel else ("#2563eb" if v >= 0 else "#f97316")
+            for j, v in zip(a_ord["JUGADOR"], a_ord["IND_ATK"])
+        ]
+        fig_atk = go.Figure(
+            go.Bar(
+                y=a_ord["JUGADOR"],
+                x=a_ord["IND_ATK"],
+                orientation="h",
+                marker_color=colores_atk,
+                text=a_ord["IND_ATK"].map(lambda v: f"{v:+.2f}"),
+                textposition="outside",
+            )
+        )
+        fig_atk.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_atk.update_layout(
+            height=350,
+            margin=dict(l=10, r=40, t=20, b=20),
+            xaxis_title="Puntuación Z ofensiva",
+        )
+        st.plotly_chart(fig_atk, use_container_width=True)
+
+
 def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada seleccionada"):
     """Renderiza el expediente individual formativo para las familias."""
     _inject_print_css()
@@ -196,6 +304,9 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
     )
     st.plotly_chart(fig_pilares, use_container_width=True)
 
+    # Gráfica 4: Índices de Jugador Total en Defensa y Ataque
+    mostrar_graficas_jugador_total(acum_f, jugador_sel=jugador_sel)
+
     # 3. Tabla resumen de estadísticas del tramo
     st.subheader("Resumen estadístico del tramo")
     cols_tabla = [
@@ -215,7 +326,7 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
         with col_r1:
             fortalezas = st.text_area(
                 "1. Fortalezas en pista",
-                value=f"Buena actitud defensiva y energía en los sextos disputados. Ayuda al equipo a mantener el ritmo colectivo.",
+                value="Buena actitud defensiva y energía en los sextos disputados. Ayuda al equipo a mantener el ritmo colectivo.",
                 height=110,
                 key=f"fort_{jugador_sel}",
             )
@@ -257,6 +368,9 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
         ("%OREB", "Rebote ofensivo", "Porcentaje de rebotes de ataque capturados sobre los disponibles durante sus sextos."),
         ("AS/TO", "Asistencias por pérdida", "Relación entre pases de canasta y balones perdidos; refleja criterio y control."),
         ("VAL/SEX", "Valoración por sexto", "Aportación global positiva (puntos, rebotes, asistencias, robos, faltas recibidas) por sexto jugado."),
+        ("IND_DEF", "Jugador Total en Defensa", "Combina defensa en pista (DER_ON), paradas (%STOPS), rebote defensivo y robos por sexto respecto al grupo; valores > 0 superan el nivel medio defensivo."),
+        ("IND_ATK", "Jugador Total en Ataque", "Combina ataque en pista (OER_ON), acierto real (TS%), asistencias y rebote ofensivo por sexto ajustando por pérdidas; mide aportación ofensiva global."),
     ]
     df_glosario = pd.DataFrame(glosario_data, columns=["Sigla", "Nombre", "Qué significa en baloncesto de formación"])
     st.dataframe(df_glosario, hide_index=True, use_container_width=True)
+    
