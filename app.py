@@ -6,6 +6,7 @@ from motor_datos import cargar_y_procesar_excel
 from ficha_jugador import mostrar_ficha_jugador
 from rotaciones import mostrar_planificador_rotaciones
 from tagger import mostrar_tagger
+from videoteca import mostrar_videoteca
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -81,11 +82,12 @@ st.divider()
 # ---------------------------------------------------------
 # 4. NAVEGACIÓN POR PESTAÑAS
 # ---------------------------------------------------------
-tab_equipo, tab_jugador, tab_rotaciones, tab_tagger = st.tabs([
+tab_equipo, tab_jugador, tab_rotaciones, tab_tagger, tab_videoteca = st.tabs([
     "📊 Panel del Equipo",
     "👤 Ficha Individual y Comparador",
     "⏱️ Planificador de Rotaciones",
     "🎯 Calculadora Post-Partido",
+    "🎬 Videoteca Táctica",
 ])
 
 # --- PESTAÑA 1: PANEL DEL EQUIPO ---
@@ -179,4 +181,7 @@ with tab_rotaciones:
 # --- PESTAÑA 4: CALCULADORA POST-PARTIDO ---
 with tab_tagger:
     mostrar_tagger()
-    
+
+# --- PESTAÑA 5: VIDEOTECA TÁCTICA ---
+with tab_videoteca:
+    mostrar_videoteca()

@@ -68,9 +68,12 @@ def inicializar_estado_tagger(plantilla):
             "condicion": "LOCAL",
             "sexto6_sin_cambios": False,
             "sextos_excepcion": [],
+            "url_youtube": "",
         }
     if "sextos_excepcion" not in st.session_state.tagger_meta:
         st.session_state.tagger_meta["sextos_excepcion"] = []
+    if "url_youtube" not in st.session_state.tagger_meta:
+        st.session_state.tagger_meta["url_youtube"] = ""
 
     if "tagger_quintets" not in st.session_state:
         todos_posibles = (
@@ -106,6 +109,15 @@ def formatear_hhmmss(segundos):
     m = (segundos % 3600) // 60
     s = segundos % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def url_youtube_con_segundo(url, segundos):
+    url = str(url).strip()
+    if not url:
+        return ""
+    url_limpia = re.sub(r"([?&])t=\d+s?", "", url).rstrip("?&")
+    separador = "&" if "?" in url_limpia else "?"
+    return f"{url_limpia}{separador}t={int(segundos)}s"
 
 
 def recalcular_estadisticas(plantilla, quintets, eventos, sexto6_sin_cambios, sextos_excepcion):
@@ -157,7 +169,6 @@ def recalcular_estadisticas(plantilla, quintets, eventos, sexto6_sin_cambios, se
     # 3. Procesar cronológicamente los eventos
     for ev in eventos:
         tramo = ev["tramo"]
-        # Si se activó cambio excepcional tras haber anotado el inicio del sexto, reasignar al tramo A
         if tramo in sextos_excepcion:
             tramo = f"{tramo}A (0,5)"
         elif tramo.endswith("A (0,5)") or tramo.endswith("B (0,5)"):
@@ -252,6 +263,7 @@ def generar_excel_borrador(meta, df_ind, eq_art, eq_riv, eventos, clips):
     """Genera un archivo Excel borrador aislado alineado con las columnas de tu libro maestro."""
     jornada = meta["jornada"]
     rival = meta["rival"].strip().upper() or "RIVAL"
+    url_yt = meta.get("url_youtube", "").strip()
     res_art = "WIN" if eq_art["PTS"] > eq_riv["PTS"] else ("LOST" if eq_art["PTS"] < eq_riv["PTS"] else "DRAW")
     res_riv = "LOST" if res_art == "WIN" else ("WIN" if res_art == "LOST" else "DRAW")
 
@@ -309,9 +321,19 @@ def generar_excel_borrador(meta, df_ind, eq_art, eq_riv, eventos, clips):
         except Exception:
             pass
 
-    df_videos_out = pd.DataFrame(clips) if clips else pd.DataFrame(
-        columns=["JORNADA", "RIVAL", "TRAMO", "JUGADOR", "CONCEPTO", "INICIO_CLIP", "FIN_CLIP", "NOTA_ENTRENADOR", "URL_VIDEO"]
-    )
+    if clips:
+        clips_actualizados = []
+        for c in clips:
+            fila_c = dict(c)
+            if url_yt:
+                fila_c["URL_VIDEO"] = url_yt
+            clips_actualizados.append(fila_c)
+        df_videos_out = pd.DataFrame(clips_actualizados)
+    else:
+        df_videos_out = pd.DataFrame(
+            columns=["JORNADA", "RIVAL", "TRAMO", "JUGADOR", "CONCEPTO", "INICIO_CLIP", "FIN_CLIP", "NOTA_ENTRENADOR", "URL_VIDEO"]
+        )
+
     df_eventos_out = pd.DataFrame(eventos) if eventos else pd.DataFrame(
         columns=["tramo", "equipo", "jugador", "accion", "etiqueta"]
     )
@@ -324,35 +346,6 @@ def generar_excel_borrador(meta, df_ind, eq_art, eq_riv, eventos, clips):
         df_eventos_out.to_excel(writer, sheet_name="LOG_EVENTOS", index=False)
     buffer.seek(0)
     return buffer
-
-
-def generar_bat_ffmpeg(meta, clips):
-    """Genera un script .bat para cortar automáticamente los clips de 12s con FFmpeg en Windows."""
-    jornada = meta["jornada"]
-    rival = re.sub(r"[^A-Za-z0-9_-]", "", meta["rival"].upper() or "RIVAL")
-    lineas = [
-        "@echo off",
-        "chcp 65001 >nul",
-        f"echo === RECORTANDO CLIPS TACTICOS JORNADA {jornada} vs {rival} ===",
-        'set /p VIDEO="Arrastra aqui el archivo de video del partido y pulsa ENTER: "',
-        'set VIDEO=%VIDEO:"=%',
-        f'if not exist "CLIPS_J{jornada}_{rival}" mkdir "CLIPS_J{jornada}_{rival}"',
-        ""
-    ]
-    for idx, c in enumerate(clips, start=1):
-        concepto_limpio = re.sub(r"[^A-Za-z0-9_-]", "_", c["CONCEPTO"])
-        jug_limpio = re.sub(r"[^A-Za-z0-9_-]", "_", c["JUGADOR"])
-        nombre_salida = f"CLIPS_J{jornada}_{rival}\\J{jornada}_{idx:02d}_{concepto_limpio}_{jug_limpio}.mp4"
-        lineas.append(
-            f'ffmpeg -y -ss {c["INICIO_CLIP"]} -i "%VIDEO%" -t 12 -c copy "{nombre_salida}"'
-        )
-    lineas.extend([
-        "",
-        "echo.",
-        f'echo Listo! Clips guardados en la carpeta CLIPS_J{jornada}_{rival}',
-        "pause"
-    ])
-    return "\r\n".join(lineas).encode("utf-8")
 
 
 def mostrar_tagger():
@@ -476,7 +469,6 @@ def mostrar_tagger():
     )
     st.session_state.tagger_quintets[tramo_sel] = quinteto_actual
 
-    # Resumen compacto de sextos acumulados por jugador
     resumen_sextos = []
     for _, row in df_ind.iterrows():
         s = row["SEXTOS"]
@@ -622,8 +614,14 @@ def mostrar_tagger():
 
     st.markdown("---")
 
-    # --- BLOQUE 4: MARCADOR DE CLIPS DE VÍDEO (10-12 SEGUNDOS) ---
-    with st.expander("🎬 Marcar Clips de Vídeo (10-12 segundos) y Script de Recorte", expanded=False):
+    # --- BLOQUE 4: MARCADOR DE CLIPS DE VÍDEO (ENLACE DIRECTO YOUTUBE) ---
+    with st.expander("🎬 Marcar Jugadas en YouTube (Salto directo al minuto exacto)", expanded=False):
+        st.session_state.tagger_meta["url_youtube"] = st.text_input(
+            "🔗 Enlace de YouTube del partido (pégalo una sola vez):",
+            value=st.session_state.tagger_meta.get("url_youtube", ""),
+            placeholder="https://www.youtube.com/watch?v=...",
+        )
+
         vc1, vc2, vc3, vc4 = st.columns([1, 1.5, 1.5, 2])
         tiempo_vid = vc1.text_input("Minuto vídeo (MM:SS)", placeholder="14:25")
         concepto_vid = vc2.selectbox(
@@ -633,11 +631,12 @@ def mostrar_tagger():
         jug_vid = vc3.selectbox("Protagonista", ["EQUIPO"] + plantilla)
         nota_vid = vc4.text_input("Nota para entrenadores", placeholder="Llega tarde desde lado débil...")
 
-        if st.button("➕ Añadir Clip de 12 segundos (-4s / +8s)"):
+        if st.button("➕ Guardar marca de tiempo (-4s de margen)"):
             seg = convertir_tiempo_a_segundos(tiempo_vid)
             if seg is None:
                 st.error("Escribe el tiempo en formato MM:SS (ejemplo: 14:25).")
             else:
+                seg_inicio = max(0, seg - 4)
                 st.session_state.tagger_clips.append(
                     {
                         "JORNADA": st.session_state.tagger_meta["jornada"],
@@ -645,23 +644,35 @@ def mostrar_tagger():
                         "TRAMO": tramo_sel,
                         "JUGADOR": jug_vid,
                         "CONCEPTO": concepto_vid,
-                        "INICIO_CLIP": formatear_hhmmss(seg - 4),
+                        "INICIO_CLIP": formatear_hhmmss(seg_inicio),
                         "FIN_CLIP": formatear_hhmmss(seg + 8),
                         "NOTA_ENTRENADOR": nota_vid,
-                        "URL_VIDEO": "",
+                        "URL_VIDEO": st.session_state.tagger_meta["url_youtube"].strip(),
                     }
                 )
-                st.success(f"Clip guardado ({formatear_hhmmss(seg - 4)} -> {formatear_hhmmss(seg + 8)}).")
+                st.success(f"Marca guardada en {formatear_hhmmss(seg_inicio)}.")
 
         if st.session_state.tagger_clips:
+            url_actual = st.session_state.tagger_meta.get("url_youtube", "").strip()
+            for c in st.session_state.tagger_clips:
+                if url_actual:
+                    c["URL_VIDEO"] = url_actual
+
             st.dataframe(pd.DataFrame(st.session_state.tagger_clips), use_container_width=True)
-            bat_bytes = generar_bat_ffmpeg(st.session_state.tagger_meta, st.session_state.tagger_clips)
-            st.download_button(
-                "🎞️ Descargar recortador automático (.bat para FFmpeg)",
-                data=bat_bytes,
-                file_name=f"cortar_clips_J{st.session_state.tagger_meta['jornada']}.bat",
-                mime="text/plain",
-            )
+
+            # Generar resumen listo para pegar en WhatsApp al cuerpo técnico
+            lineas_ws = [
+                f"🏀 *VÍDEO TÁCTICO J{st.session_state.tagger_meta['jornada']} vs {st.session_state.tagger_meta['rival'].upper()}*"
+            ]
+            for c in st.session_state.tagger_clips:
+                s_clip = convertir_tiempo_a_segundos(c["INICIO_CLIP"]) or 0
+                min_txt = f"{s_clip // 60:02d}:{s_clip % 60:02d}"
+                enlace = url_youtube_con_segundo(c["URL_VIDEO"], s_clip)
+                lineas_ws.append(
+                    f"• Min {min_txt} | {c['JUGADOR']} ({c['CONCEPTO']}): {c['NOTA_ENTRENADOR']} {enlace}".strip()
+                )
+            st.caption("📋 Resumen listo para copiar y mandar por WhatsApp al cuerpo técnico:")
+            st.code("\n".join(lineas_ws), language=None)
 
     # --- BLOQUE 5: CORTAFUEGOS DE AUDITORÍA Y EXPORTACIÓN A BORRADOR ---
     st.subheader("3️⃣ Auditoría Matemática (Cortafuegos) y Exportación")
