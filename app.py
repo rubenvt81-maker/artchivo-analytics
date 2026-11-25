@@ -7,7 +7,7 @@ from ficha_jugador import mostrar_ficha_jugador
 from rotaciones import mostrar_planificador_rotaciones
 from tagger import mostrar_tagger
 from videoteca import mostrar_videoteca
-from expediente import mostrar_expediente_familias
+from expediente import mostrar_expediente_familias, mostrar_graficas_jugador_total_equipo
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -133,8 +133,6 @@ st.divider()
 # ---------------------------------------------------------
 # 4. NAVEGACIÓN POR PESTAÑAS
 # ---------------------------------------------------------
-# 4. NAVEGACIÓN POR PESTAÑAS
-# ---------------------------------------------------------
 tab_equipo, tab_jugador, tab_rotaciones, tab_tagger, tab_videoteca, tab_expediente_familias = st.tabs([
     "📊 Panel del Equipo",
     "👤 Ficha Individual y Comparador",
@@ -205,6 +203,10 @@ with tab_equipo:
         )
         st.plotly_chart(fig_uso, use_container_width=True)
 
+    st.divider()
+    mostrar_graficas_jugador_total_equipo(acum_f)
+    st.divider()
+
     st.subheader("📋 Estadísticas Acumuladas de la Plantilla (Ponderadas)")
     columnas_vista = [
         "NUM", "JUGADOR", "PART", "SEXTOS", "PTS", "PTS/PART", "PTS/SEX",
@@ -241,7 +243,7 @@ with tab_videoteca:
     mostrar_videoteca()
 
 # --- PESTAÑA 6: EXPEDIENTE DE FAMILIAS ---
-with tab_expediente_familias:   
+with tab_expediente_familias:
     texto_jornadas = (
         ", ".join(str(j) for j in sorted(jugados_f["JORNADA"].unique()))
         if not jugados_f.empty
