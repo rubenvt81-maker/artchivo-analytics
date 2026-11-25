@@ -7,6 +7,7 @@ from ficha_jugador import mostrar_ficha_jugador
 from rotaciones import mostrar_planificador_rotaciones
 from tagger import mostrar_tagger
 from videoteca import mostrar_videoteca
+from expediente import mostrar_expediente_familias
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -132,12 +133,15 @@ st.divider()
 # ---------------------------------------------------------
 # 4. NAVEGACIÓN POR PESTAÑAS
 # ---------------------------------------------------------
-tab_equipo, tab_jugador, tab_rotaciones, tab_tagger, tab_videoteca = st.tabs([
+# 4. NAVEGACIÓN POR PESTAÑAS
+# ---------------------------------------------------------
+tab_equipo, tab_jugador, tab_rotaciones, tab_tagger, tab_videoteca, tab_expediente_familias = st.tabs([
     "📊 Panel del Equipo",
     "👤 Ficha Individual y Comparador",
     "⏱️ Planificador de Rotaciones",
     "🎯 Calculadora Post-Partido",
     "🎬 Videoteca Táctica",
+    "📋 Expediente Familias",
 ])
 
 # --- PESTAÑA 1: PANEL DEL EQUIPO ---
@@ -235,3 +239,13 @@ with tab_tagger:
 # --- PESTAÑA 5: VIDEOTECA TÁCTICA ---
 with tab_videoteca:
     mostrar_videoteca()
+
+# --- PESTAÑA 6: EXPEDIENTE DE FAMILIAS ---
+with tab_expediente_familias:   
+    texto_jornadas = (
+        ", ".join(str(j) for j in sorted(jugados_f["JORNADA"].unique()))
+        if not jugados_f.empty
+        else "Sin filtro"
+    )
+    etiqueta_tramo = f"Jornadas {texto_jornadas}"
+    mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro=etiqueta_tramo)
