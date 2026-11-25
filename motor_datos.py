@@ -2,13 +2,83 @@ import pandas as pd
 import numpy as np
 
 
+def calcular_acumulado_jugadores(jugados_df):
+    """Calcula el acumulado ponderado por jugador a partir de las actuaciones filtradas."""
+    if jugados_df.empty:
+        return pd.DataFrame()
+
+    acum = jugados_df.groupby(["NUM", "JUGADOR"], as_index=False).agg(
+        PART=("JUEGA", "count"),
+        SEXTOS=("SEXTOS", "sum"),
+        PTS=("PTS", "sum"),
+        PM2=("2PM", "sum"),
+        PA2=("2PA", "sum"),
+        PM3=("3PM", "sum"),
+        PA3=("3PA", "sum"),
+        FGM=("FGM", "sum"),
+        FGA=("FGA", "sum"),
+        FTM=("FTM", "sum"),
+        FTA=("FTA", "sum"),
+        RO=("RO", "sum"),
+        RD=("RD", "sum"),
+        REB=("REB", "sum"),
+        AS=("AS", "sum"),
+        REC=("STL", "sum"),
+        PER=("TO", "sum"),
+        TAP_F=("BLKF", "sum"),
+        TAP_C=("BLKC", "sum"),
+        FC=("FC", "sum"),
+        FR=("FR", "sum"),
+        VAL=("VAL", "sum"),
+        PTS_FAV=("PTS_FAV", "sum"),
+        PTS_REC=("PTS_REC", "sum"),
+        POS_ON=("POS_ON", "sum"),
+        OR_EQ_ON=("OR_EQ_ON", "sum"),
+    )
+
+    acum["%2P"] = np.where(acum["PA2"] > 0, ((acum["PM2"] / acum["PA2"]) * 100).round(1), 0.0)
+    acum["%3P"] = np.where(acum["PA3"] > 0, ((acum["PM3"] / acum["PA3"]) * 100).round(1), 0.0)
+    acum["%TL"] = np.where(acum["FTA"] > 0, ((acum["FTM"] / acum["FTA"]) * 100).round(1), 0.0)
+    acum["%eFG"] = np.where(acum["FGA"] > 0, (((acum["FGM"] + 0.5 * acum["PM3"]) / acum["FGA"]) * 100).round(1), 0.0)
+    acum["TS%"] = np.where(
+        (acum["FGA"] + 0.44 * acum["FTA"]) > 0,
+        ((acum["PTS"] / (2 * (acum["FGA"] + 0.44 * acum["FTA"]))) * 100).round(1),
+        0.0,
+    )
+    acum["POS"] = (acum["FGA"] + 0.44 * acum["FTA"] - acum["RO"] + acum["PER"]).clip(lower=0).round(1)
+    acum["OER"] = np.where(acum["POS"] > 0, (acum["PTS"] / acum["POS"]).round(2), 0.0)
+    acum["OER_ON"] = np.where(acum["POS_ON"] > 0, (acum["PTS_FAV"] / acum["POS_ON"]).round(2), 0.0)
+    acum["DER_ON"] = np.where(acum["POS_ON"] > 0, (acum["PTS_REC"] / acum["POS_ON"]).round(2), 0.0)
+    acum["NET_ON"] = (acum["OER_ON"] - acum["DER_ON"]).round(2)
+    acum["%USO"] = np.where(acum["POS_ON"] > 0, ((acum["POS"] / acum["POS_ON"]) * 100).round(1), 0.0)
+    acum["%STOPS"] = np.where(
+        acum["POS_ON"] > 0,
+        (((acum["RD"] + acum["REC"] + acum["TAP_F"]) / acum["POS_ON"]) * 100).round(1),
+        0.0,
+    )
+    acum["%OREB"] = np.where(acum["OR_EQ_ON"] > 0, ((acum["RO"] / acum["OR_EQ_ON"]) * 100).round(1), 0.0)
+    acum["AS/TO"] = np.where(acum["PER"] > 0, (acum["AS"] / acum["PER"]).round(2), acum["AS"].astype(float))
+    acum["RATIO_PER/USO"] = np.where(
+        (acum["POS"] > 0) & (acum["%USO"] > 0),
+        (((acum["PER"] / acum["POS"]) * 100) / acum["%USO"]).round(2),
+        0.0,
+    )
+    acum["PTS/PART"] = (acum["PTS"] / acum["PART"]).round(1)
+    acum["REB/PART"] = (acum["REB"] / acum["PART"]).round(1)
+    acum["AS/PART"] = (acum["AS"] / acum["PART"]).round(1)
+    acum["PTS/SEX"] = np.where(acum["SEXTOS"] > 0, (acum["PTS"] / acum["SEXTOS"]).round(2), 0.0)
+    acum["VAL/SEX"] = np.where(acum["SEXTOS"] > 0, (acum["VAL"] / acum["SEXTOS"]).round(2), 0.0)
+
+    return acum
+
+
 def cargar_y_procesar_excel(ruta_o_archivo):
     """
     Lee las pestañas 'GAMES' y 'REGISTRO_PARTIDOS' y devuelve 4 tablas listas:
-      1. df_games: Todos los partidos de la competición.
-      2. resumen_jornadas: Resumen partido a partido de CB Artchivo.
-      3. jugados: Las 93 actuaciones individuales con sus métricas por partido.
-      4. acum: El acumulado ponderado de los 12 jugadores.
+    1. df_games: Todos los partidos de la competición.
+    2. resumen_jornadas: Resumen partido a partido de CB Artchivo.
+    3. jugados: Las actuaciones individuales con sus métricas por partido.
+    4. acum: El acumulado ponderado de los jugadores.
     """
     xls = pd.ExcelFile(ruta_o_archivo)
     df_games = pd.read_excel(xls, sheet_name="GAMES")
@@ -88,68 +158,7 @@ def cargar_y_procesar_excel(ruta_o_archivo):
         0.0,
     )
 
-    # 3. Acumulado ponderado por jugador
-    acum = jugados.groupby(["NUM", "JUGADOR"], as_index=False).agg(
-        PART=("JUEGA", "count"),
-        SEXTOS=("SEXTOS", "sum"),
-        PTS=("PTS", "sum"),
-        PM2=("2PM", "sum"),
-        PA2=("2PA", "sum"),
-        PM3=("3PM", "sum"),
-        PA3=("3PA", "sum"),
-        FGM=("FGM", "sum"),
-        FGA=("FGA", "sum"),
-        FTM=("FTM", "sum"),
-        FTA=("FTA", "sum"),
-        RO=("RO", "sum"),
-        RD=("RD", "sum"),
-        REB=("REB", "sum"),
-        AS=("AS", "sum"),
-        REC=("STL", "sum"),
-        PER=("TO", "sum"),
-        TAP_F=("BLKF", "sum"),
-        TAP_C=("BLKC", "sum"),
-        FC=("FC", "sum"),
-        FR=("FR", "sum"),
-        VAL=("VAL", "sum"),
-        PTS_FAV=("PTS_FAV", "sum"),
-        PTS_REC=("PTS_REC", "sum"),
-        POS_ON=("POS_ON", "sum"),
-        OR_EQ_ON=("OR_EQ_ON", "sum"),
-    )
-
-    acum["%2P"] = np.where(acum["PA2"] > 0, ((acum["PM2"] / acum["PA2"]) * 100).round(1), 0.0)
-    acum["%3P"] = np.where(acum["PA3"] > 0, ((acum["PM3"] / acum["PA3"]) * 100).round(1), 0.0)
-    acum["%TL"] = np.where(acum["FTA"] > 0, ((acum["FTM"] / acum["FTA"]) * 100).round(1), 0.0)
-    acum["%eFG"] = np.where(acum["FGA"] > 0, (((acum["FGM"] + 0.5 * acum["PM3"]) / acum["FGA"]) * 100).round(1), 0.0)
-    acum["TS%"] = np.where(
-        (acum["FGA"] + 0.44 * acum["FTA"]) > 0,
-        ((acum["PTS"] / (2 * (acum["FGA"] + 0.44 * acum["FTA"]))) * 100).round(1),
-        0.0,
-    )
-    acum["POS"] = (acum["FGA"] + 0.44 * acum["FTA"] - acum["RO"] + acum["PER"]).clip(lower=0).round(1)
-    acum["OER"] = np.where(acum["POS"] > 0, (acum["PTS"] / acum["POS"]).round(2), 0.0)
-    acum["OER_ON"] = np.where(acum["POS_ON"] > 0, (acum["PTS_FAV"] / acum["POS_ON"]).round(2), 0.0)
-    acum["DER_ON"] = np.where(acum["POS_ON"] > 0, (acum["PTS_REC"] / acum["POS_ON"]).round(2), 0.0)
-    acum["NET_ON"] = (acum["OER_ON"] - acum["DER_ON"]).round(2)
-    acum["%USO"] = np.where(acum["POS_ON"] > 0, ((acum["POS"] / acum["POS_ON"]) * 100).round(1), 0.0)
-    acum["%STOPS"] = np.where(
-        acum["POS_ON"] > 0,
-        (((acum["RD"] + acum["REC"] + acum["TAP_F"]) / acum["POS_ON"]) * 100).round(1),
-        0.0,
-    )
-    acum["%OREB"] = np.where(acum["OR_EQ_ON"] > 0, ((acum["RO"] / acum["OR_EQ_ON"]) * 100).round(1), 0.0)
-    acum["AS/TO"] = np.where(acum["PER"] > 0, (acum["AS"] / acum["PER"]).round(2), acum["AS"].astype(float))
-    acum["RATIO_PER/USO"] = np.where(
-        (acum["POS"] > 0) & (acum["%USO"] > 0),
-        (((acum["PER"] / acum["POS"]) * 100) / acum["%USO"]).round(2),
-        0.0,
-    )
-    acum["PTS/PART"] = (acum["PTS"] / acum["PART"]).round(1)
-    acum["REB/PART"] = (acum["REB"] / acum["PART"]).round(1)
-    acum["AS/PART"] = (acum["AS"] / acum["PART"]).round(1)
-    acum["PTS/SEX"] = (acum["PTS"] / acum["SEXTOS"]).round(2)
-    acum["VAL/SEX"] = (acum["VAL"] / acum["SEXTOS"]).round(2)
+    # 3. Acumulado ponderado inicial
+    acum = calcular_acumulado_jugadores(jugados)
 
     return df_games, resumen_jornadas, jugados, acum
-

@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from motor_datos import cargar_y_procesar_excel
+from motor_datos import cargar_y_procesar_excel, calcular_acumulado_jugadores
 from ficha_jugador import mostrar_ficha_jugador
 from rotaciones import mostrar_planificador_rotaciones
 from tagger import mostrar_tagger
@@ -42,33 +42,83 @@ with st.sidebar:
         st.stop()
 
 # Procesamos el Excel usando nuestro motor
-df_games, resumen_jornadas, jugados, acum = cargar_y_procesar_excel(fuente)
+df_games, resumen_jornadas, jugados, _ = cargar_y_procesar_excel(fuente)
 
 with st.sidebar:
     st.divider()
     st.header("🔎 Filtro de Jornadas")
     jornadas_disp = sorted(resumen_jornadas["JORNADA"].unique())
-    rango_jornadas = st.select_slider(
-        "Selecciona el rango de jornadas:",
-        options=jornadas_disp,
-        value=(min(jornadas_disp), max(jornadas_disp)),
+
+    modo_filtro = st.radio(
+        "Modo de selección:",
+        ["Rango continuo", "Jornadas sueltas"],
+        horizontal=True,
     )
 
-# Filtramos el resumen de partidos según el deslizador
-res_f = resumen_jornadas[
-    (resumen_jornadas["JORNADA"] >= rango_jornadas[0])
-    & (resumen_jornadas["JORNADA"] <= rango_jornadas[1])
-].copy()
+    if modo_filtro == "Rango continuo":
+        rango_jornadas = st.select_slider(
+            "Selecciona el rango de jornadas:",
+            options=jornadas_disp,
+            value=(min(jornadas_disp), max(jornadas_disp)),
+        )
+        jornadas_elegidas = [
+            j for j in jornadas_disp if rango_jornadas[0] <= j <= rango_jornadas[1]
+        ]
+    else:
+        etiquetas_map = {}
+        etiquetas_derrotas = []
+        for _, r in resumen_jornadas.sort_values("JORNADA").iterrows():
+            j_num = r["JORNADA"]
+            rival_txt = str(r.get("RIVAL", "")).strip()
+            res_txt = str(r.get("RESULTADO", "")).strip()
+            etiqueta = f"J{j_num} vs {rival_txt} ({res_txt})"
+            etiquetas_map[etiqueta] = j_num
+            if res_txt == "L":
+                etiquetas_derrotas.append(etiqueta)
+
+        if st.button("📉 Cargar solo derrotas (L)", use_container_width=True, disabled=len(etiquetas_derrotas) == 0):
+            st.session_state.ms_jornadas_sueltas = etiquetas_derrotas
+
+        if "ms_jornadas_sueltas" not in st.session_state:
+            st.session_state.ms_jornadas_sueltas = list(etiquetas_map.keys())
+        else:
+            st.session_state.ms_jornadas_sueltas = [
+                e for e in st.session_state.ms_jornadas_sueltas if e in etiquetas_map
+            ]
+
+        seleccion_etiquetas = st.multiselect(
+            "Elige las jornadas concretas:",
+            options=list(etiquetas_map.keys()),
+            key="ms_jornadas_sueltas",
+            placeholder="Selecciona una o varias jornadas...",
+        )
+        jornadas_elegidas = [etiquetas_map[e] for e in seleccion_etiquetas]
+
+if not jornadas_elegidas:
+    st.warning("⚠️ Selecciona al menos una jornada en el menú lateral para calcular los indicadores.")
+    st.stop()
+
+# Filtramos partidos y actuaciones individuales según las jornadas elegidas
+res_f = resumen_jornadas[resumen_jornadas["JORNADA"].isin(jornadas_elegidas)].copy()
+jugados_f = jugados[jugados["JORNADA"].isin(jornadas_elegidas)].copy()
+acum_f = calcular_acumulado_jugadores(jugados_f)
 
 # ---------------------------------------------------------
 # 3. INDICADORES CLAVE DEL EQUIPO (KPIs)
 # ---------------------------------------------------------
 victorias = (res_f["RESULTADO"] == "W").sum()
 derrotas = (res_f["RESULTADO"] == "L").sum()
-oer_global = res_f["PTS_FAV"].sum() / res_f["POS_EQ"].sum()
-der_global = res_f["PTS_CON"].sum() / res_f["POS_EQ"].sum()
+pos_tot = res_f["POS_EQ"].sum()
+pts_fav_tot = res_f["PTS_FAV"].sum()
+
+oer_global = pts_fav_tot / pos_tot if pos_tot > 0 else 0.0
+der_global = res_f["PTS_CON"].sum() / pos_tot if pos_tot > 0 else 0.0
 net_global = oer_global - der_global
-pts_transicion = (res_f["CONTRA_TOT"].sum() + res_f["PRESION_TOT"].sum()) / res_f["PTS_FAV"].sum() * 100
+pts_transicion = (
+    (res_f["CONTRA_TOT"].sum() + res_f["PRESION_TOT"].sum()) / pts_fav_tot * 100
+    if pts_fav_tot > 0
+    else 0.0
+)
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Balance", f"{victorias}V - {derrotas}D", f"{len(res_f)} jornadas")
@@ -96,7 +146,7 @@ with tab_equipo:
 
     with col_izq:
         st.subheader("📊 Impacto Colectivo en Pista (OER_ON vs DER_ON)")
-        acum_ord = acum.sort_values("NET_ON", ascending=True)
+        acum_ord = acum_f.sort_values("NET_ON", ascending=True)
 
         fig_on = go.Figure()
         fig_on.add_trace(go.Bar(
@@ -129,7 +179,7 @@ with tab_equipo:
     with col_der:
         st.subheader("🎯 Volumen de Uso (%USO) vs Eficiencia Individual (OER)")
         fig_uso = px.scatter(
-            acum,
+            acum_f,
             x="%USO",
             y="OER",
             size="SEXTOS",
@@ -144,7 +194,7 @@ with tab_equipo:
         )
         fig_uso.update_traces(textposition="top center")
         fig_uso.add_vline(x=20.0, line_dash="dash", line_color="gray", annotation_text="Uso neutro (20%)")
-        fig_uso.add_hline(y=acum["OER"].mean(), line_dash="dot", line_color="gray", annotation_text="OER medio")
+        fig_uso.add_hline(y=acum_f["OER"].mean(), line_dash="dot", line_color="gray", annotation_text="OER medio")
         fig_uso.update_layout(
             height=450,
             margin=dict(l=10, r=20, t=20, b=20),
@@ -158,7 +208,7 @@ with tab_equipo:
         "TS%", "%eFG", "POS", "OER", "%USO", "OER_ON", "DER_ON", "NET_ON", "%STOPS", "RATIO_PER/USO"
     ]
     st.dataframe(
-        acum[columnas_vista].sort_values("NET_ON", ascending=False),
+        acum_f[columnas_vista].sort_values("NET_ON", ascending=False),
         use_container_width=True,
         hide_index=True,
     )
@@ -172,11 +222,11 @@ with tab_equipo:
 
 # --- PESTAÑA 2: FICHA INDIVIDUAL Y COMPARADOR ---
 with tab_jugador:
-    mostrar_ficha_jugador(jugados, acum)
+    mostrar_ficha_jugador(jugados_f, acum_f)
 
 # --- PESTAÑA 3: PLANIFICADOR DE ROTACIONES ---
 with tab_rotaciones:
-    mostrar_planificador_rotaciones(acum)
+    mostrar_planificador_rotaciones(acum_f)
 
 # --- PESTAÑA 4: CALCULADORA POST-PARTIDO ---
 with tab_tagger:
