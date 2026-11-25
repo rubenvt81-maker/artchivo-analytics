@@ -74,6 +74,67 @@ def calcular_indices_totales(acum_f):
     return df
 
 
+def mostrar_graficas_jugador_total_equipo(acum_f):
+    """Muestra las gráficas de Jugador Total en Defensa (IND_DEF) y en Ataque (IND_ATK) para toda la plantilla."""
+    df = calcular_indices_totales(acum_f)
+    if df.empty:
+        st.info("No hay datos suficientes de sextos para calcular los índices de jugador total.")
+        return
+
+    st.markdown("### 🏆 Índices de Jugador Total (Defensa y Ataque)")
+    col_d, col_a = st.columns(2)
+
+    with col_d:
+        st.subheader("🛡️ Jugador Total en Defensa")
+        d_ord = df.sort_values("IND_DEF", ascending=True)
+        colores_def = [
+            "#16a34a" if v >= 0 else "#dc2626"
+            for v in d_ord["IND_DEF"]
+        ]
+        fig_def = go.Figure(
+            go.Bar(
+                y=d_ord["JUGADOR"],
+                x=d_ord["IND_DEF"],
+                orientation="h",
+                marker_color=colores_def,
+                text=d_ord["IND_DEF"].map(lambda v: f"{v:+.2f}"),
+                textposition="outside",
+            )
+        )
+        fig_def.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_def.update_layout(
+            height=360,
+            margin=dict(l=10, r=40, t=20, b=20),
+            xaxis_title="Índice Z (40% -DER_ON, 30% %STOPS, 15% RD/SEX, 15% REC/SEX)",
+        )
+        st.plotly_chart(fig_def, use_container_width=True)
+
+    with col_a:
+        st.subheader("⚔️ Jugador Total en Ataque")
+        a_ord = df.sort_values("IND_ATK", ascending=True)
+        colores_atk = [
+            "#2563eb" if v >= 0 else "#f97316"
+            for v in a_ord["IND_ATK"]
+        ]
+        fig_atk = go.Figure(
+            go.Bar(
+                y=a_ord["JUGADOR"],
+                x=a_ord["IND_ATK"],
+                orientation="h",
+                marker_color=colores_atk,
+                text=a_ord["IND_ATK"].map(lambda v: f"{v:+.2f}"),
+                textposition="outside",
+            )
+        )
+        fig_atk.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_atk.update_layout(
+            height=360,
+            margin=dict(l=10, r=40, t=20, b=20),
+            xaxis_title="Índice Z (35% OER_ON, 25% TS%, 20% AS/SEX, 10% RO/SEX, -10% PER/SEX)",
+        )
+        st.plotly_chart(fig_atk, use_container_width=True)
+
+
 def mostrar_graficas_jugador_total(acum_f, jugador_sel=None):
     """Muestra únicamente el índice del jugador seleccionado frente a la media del equipo."""
     df = calcular_indices_totales(acum_f)
@@ -382,4 +443,3 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
     ]
     df_glosario = pd.DataFrame(glosario_data, columns=["Sigla", "Nombre", "Qué significa en baloncesto de formación"])
     st.dataframe(df_glosario, hide_index=True, use_container_width=True)
-    
