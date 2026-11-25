@@ -75,62 +75,71 @@ def calcular_indices_totales(acum_f):
 
 
 def mostrar_graficas_jugador_total(acum_f, jugador_sel=None):
-    """Muestra las gráficas de Jugador Total en Defensa (IND_DEF) y en Ataque (IND_ATK)."""
+    """Muestra únicamente el índice del jugador seleccionado frente a la media del equipo."""
     df = calcular_indices_totales(acum_f)
-    if df.empty:
+    if df.empty or not jugador_sel:
         st.info("No hay datos suficientes de sextos para calcular los índices de jugador total.")
         return
 
-    st.subheader("Jugador Total en Defensa vs Ataque (índice normalizado del grupo)")
+    fila_jug = df[df["JUGADOR"] == jugador_sel]
+    if fila_jug.empty:
+        st.info("El jugador seleccionado no tiene sextos registrados en este tramo.")
+        return
+
+    val_def = float(fila_jug.iloc[0]["IND_DEF"])
+    val_atk = float(fila_jug.iloc[0]["IND_ATK"])
+    media_ref = 0.0
+
+    st.subheader("Jugador Total en Defensa vs Media del equipo")
     col_d, col_a = st.columns(2)
 
     with col_d:
-        st.caption("🛡️ Jugador Total en Defensa (`IND_DEF`: 40% -DER_ON, 30% %STOPS, 15% RD/Sex, 15% REC/Sex)")
-        d_ord = df.sort_values("IND_DEF", ascending=True)
-        colores_def = [
-            "#0f172a" if j == jugador_sel else ("#16a34a" if v >= 0 else "#dc2626")
-            for j, v in zip(d_ord["JUGADOR"], d_ord["IND_DEF"])
-        ]
+        st.caption("🛡️ Defensa (`IND_DEF`: 40% -DER_ON, 30% %STOPS, 15% RD/Sex, 15% REC/Sex)")
+        categorias_d = ["Media equipo", jugador_sel]
+        valores_d = [media_ref, val_def]
+        colores_d = ["#94a3b8", "#16a34a" if val_def >= 0 else "#dc2626"]
+
         fig_def = go.Figure(
             go.Bar(
-                y=d_ord["JUGADOR"],
-                x=d_ord["IND_DEF"],
-                orientation="h",
-                marker_color=colores_def,
-                text=d_ord["IND_DEF"].map(lambda v: f"{v:+.2f}"),
+                x=categorias_d,
+                y=valores_d,
+                marker_color=colores_d,
+                text=[f"{v:+.2f}" for v in valores_d],
                 textposition="outside",
+                width=0.45,
             )
         )
-        fig_def.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_def.add_hline(y=0, line_dash="dash", line_color="#64748b")
+        max_d = max(abs(v) for v in valores_d + [0.5])
         fig_def.update_layout(
-            height=350,
-            margin=dict(l=10, r=40, t=20, b=20),
-            xaxis_title="Puntuación Z defensiva",
+            height=300,
+            margin=dict(l=20, r=20, t=25, b=20),
+            yaxis=dict(title="Índice Z defensivo", range=[-max_d * 1.35, max_d * 1.35]),
         )
         st.plotly_chart(fig_def, use_container_width=True)
 
     with col_a:
-        st.caption("⚔️ Jugador Total en Ataque (`IND_ATK`: 35% OER_ON, 25% TS%, 20% AS/Sex, 10% RO/Sex, -10% PER/Sex)")
-        a_ord = df.sort_values("IND_ATK", ascending=True)
-        colores_atk = [
-            "#0f172a" if j == jugador_sel else ("#2563eb" if v >= 0 else "#f97316")
-            for j, v in zip(a_ord["JUGADOR"], a_ord["IND_ATK"])
-        ]
+        st.caption("⚔️ Ataque (`IND_ATK`: 35% OER_ON, 25% TS%, 20% AS/Sex, 10% RO/Sex, -10% PER/Sex)")
+        categorias_a = ["Media equipo", jugador_sel]
+        valores_a = [media_ref, val_atk]
+        colores_a = ["#94a3b8", "#2563eb" if val_atk >= 0 else "#f97316"]
+
         fig_atk = go.Figure(
             go.Bar(
-                y=a_ord["JUGADOR"],
-                x=a_ord["IND_ATK"],
-                orientation="h",
-                marker_color=colores_atk,
-                text=a_ord["IND_ATK"].map(lambda v: f"{v:+.2f}"),
+                x=categorias_a,
+                y=valores_a,
+                marker_color=colores_a,
+                text=[f"{v:+.2f}" for v in valores_a],
                 textposition="outside",
+                width=0.45,
             )
         )
-        fig_atk.add_vline(x=0, line_dash="dash", line_color="#64748b")
+        fig_atk.add_hline(y=0, line_dash="dash", line_color="#64748b")
+        max_a = max(abs(v) for v in valores_a + [0.5])
         fig_atk.update_layout(
-            height=350,
-            margin=dict(l=10, r=40, t=20, b=20),
-            xaxis_title="Puntuación Z ofensiva",
+            height=300,
+            margin=dict(l=20, r=20, t=25, b=20),
+            yaxis=dict(title="Índice Z ofensivo", range=[-max_a * 1.35, max_a * 1.35]),
         )
         st.plotly_chart(fig_atk, use_container_width=True)
 
@@ -304,7 +313,7 @@ def mostrar_expediente_familias(jugados_f, acum_f, etiqueta_filtro="Temporada se
     )
     st.plotly_chart(fig_pilares, use_container_width=True)
 
-    # Gráfica 4: Índices de Jugador Total en Defensa y Ataque
+    # Gráfica 4: Índices de Jugador Total en Defensa y Ataque (solo jugador vs media)
     mostrar_graficas_jugador_total(acum_f, jugador_sel=jugador_sel)
 
     # 3. Tabla resumen de estadísticas del tramo
